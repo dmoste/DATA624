@@ -1,0 +1,251 @@
+---
+title: "Group2_Project2_Lin"
+output: html_document
+---
+
+## Neural Network Analysis
+Neural networks are non-linear regression techniques inspired by the brain. A neural network takes input based on existing data and uses backpropagation to optimize the weights of input variables to improve the model. The output predictions are based on the data from the input and hidden layers.
+
+Neural networks are powerful and work well as deep learning algorithms. They work well with large datasets and produce results with high accuracy. However, they are hard to interpret, require large amount of data and can be time consuming to build as they need a lot of customizations.
+
+```{r}
+# Import libraries
+library(mice)
+library(VIM)
+library(lattice)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(tidyverse)
+```
+
+```{r}
+# Load data
+to_model <- read.csv("https://raw.githubusercontent.com/lincarrieli/Data624/main/StudentData%20-%20TO%20MODEL.csv")
+to_predict <- read.csv("https://raw.githubusercontent.com/lincarrieli/Data624/main/StudentEvaluation-%20TO%20PREDICT.csv")
+```
+
+```{r}
+#summary(to_model)
+```
+
+
+### Data Processing
+The data is processed by replacing missing values with mean and converting categorical variable to numeric. Visualization of distributions of predictor variables is generated.
+```{r}
+# Compute missing values in each column
+colSums(is.na(to_model))
+
+# Check number of unique values in Brand.Code column
+table(to_model$Brand.Code)
+```
+
+
+```{r}
+# Assign empty Brand Codes as "A"
+to_model$Brand.Code[to_model$Brand.Code == ""] <- "A"
+```
+
+```{r}
+library(plyr)
+# Converting Brand.Code to numbers
+to_model[,1] <- mapvalues(to_model[,1],
+                                  from = c("A","B","C","D"),
+                                  to = c(1,2,3,4))
+to_model[,1] <- as.integer(to_model[,1])
+```
+
+```{r}
+# Remove response column pH
+df1 <- to_model[, -which(names(to_model) %in% 'PH')]
+```
+
+```{r}
+# Impute missing data with mean
+NA2mean <- function(x) replace(x, is.na(x), mean(x, na.rm = TRUE))
+df1[] <- lapply(df1, NA2mean)
+```
+
+
+### Visualize distribution of predictive variables
+```{r}
+library(reshape2)
+library(ggplot2)
+d <- melt(df1)
+ggplot(d,aes(x = value)) + 
+    facet_wrap(~variable,scales = "free_x") + 
+    geom_histogram()
+```
+The data exhibit a mixture of distribution patterns. Fill. Ounces, PC.Volume, and Carb.Temp are normally distributed. PSC and PSC.Fill are skewed; and other variables have bimodal distriubtions.
+
+### Transformation
+It's important to normalize the data before training for Neural Network analysis.
+A standard approach is to scale the inputs to have mean 0 and a variance. Also linear decorrelation/whitening/pca helps a lot.
+
+```{r}
+# Center and scale data 
+library(caret)
+trans <- preProcess(df1,
+                    method = c("center", "scale"))
+transformed_df <- predict(trans, df1)
+
+# Get predictors with near zero variance
+nzv <- nearZeroVar(transformed_df, saveMetrics = TRUE)
+nzv[nzv[,"nzv"] == TRUE,]
+```
+
+```{r}
+# Drop Hyd.Pressure1
+drops <- c("Hyd.Pressure1")
+transformed_df <- transformed_df[,!(names(transformed_df) %in% drops)]
+```
+
+```{r}
+# Get highly correlated variables and drop them
+higlyCorrelated <- findCorrelation(cor(transformed_df), cutoff = .75)
+processed <- transformed_df[, -higlyCorrelated]
+```
+
+```{r}
+# Add PH back to dataset
+processed <- cbind(to_model[,"PH"], processed)
+names(processed)[1] <- ("PH")
+```
+
+```{r}
+# Drop rows with missing PH
+processed <- processed[complete.cases(processed),]
+```
+
+### Building a Neural Network model
+```{r}
+#Split data into train and test
+set.seed(12345)
+train_ind <- sample(seq_len(nrow(processed)),
+                    size = floor(0.75*nrow(processed)))
+
+train <- processed[train_ind,]
+test <- processed[-train_ind,]
+```
+
+
+```{r}
+# Set training process
+fitControl <- trainControl(method = "cv", 
+                           number = 10)
+
+nnetGrid <-  expand.grid(.decay = c(0.5, 0.1),                          
+                         .size = c(5,6,7))
+
+nnetFit <- train(train[,-1],
+                 train[,1],
+                 method = "nnet",
+                 maxit = 500,
+                 trace = F,
+                 linout = 1,
+                 trControl = fitControl,
+                 tuneGrid = nnetGrid,
+                 MaxNWts = 10 * (ncol(train) + 1) + 10 + 1)
+```
+
+
+```{r}
+library(mlbench)
+
+# Rank variables by importance
+importance <- varImp(nnetFit, scale = FALSE)
+print(importance)
+plot(importance)
+```
+varImp() shows that Brand.Code, Hyd.Pressure2, Carb.Flow, Bowl.Setpoint and Temperature are the top five attributes and PSC is the least important attribute.
+
+
+```{r}
+
+nnetTune <- nnet(train[,-1],
+                 train[,1],
+                 size = 4,
+                 linout = TRUE,
+                 decay = 0,
+                 maxit = 100,
+                 MaxNWts = 10*(ncol(train)+1)+10+1) 
+```
+
+```{r}
+# Prediction
+nnetPred <- predict(nnetTune, test[,-1])
+```
+
+
+
+```{r}
+# Plot actual data vs. predicted
+plot(nnetPred,test$PH)
+```
+
+
+```{r}
+# Model evaluation
+RMSE(test$PH, nnetPred)
+mean(abs((test$PH-nnetPred)/test$PH)) * 10
+```
+
+```{r}
+
+library(MLmetrics)
+MAPE(nnetPred, test$PH)
+```
+
+### Transform and process predict data
+
+```{r}
+# Assign empty Brand Codes as "A"
+to_predict$Brand.Code[to_predict$Brand.Code == ""] <- "A"
+```
+
+```{r}
+library(plyr)
+# Converting Brand.Code to numbers
+to_predict[,1] <- mapvalues(to_predict[,1],
+                                  from = c("A","B","C","D"),
+                                  to = c(1,2,3,4))
+to_predict[,1] <- as.integer(to_predict[,1])
+```
+
+```{r}
+# Remove response column pH
+pred_df <- to_predict[, -which(names(to_predict) %in% 'PH')]
+```
+
+```{r}
+# Impute missing data with mean
+NA2mean <- function(x) replace(x, is.na(x), mean(x, na.rm = TRUE))
+pred_df[] <- lapply(pred_df, NA2mean)
+```
+
+```{r}
+# Center and scale data 
+library(caret)
+pred_trans <- preProcess(pred_df,
+                    method = c("center", "scale"))
+transformed_pred <- predict(pred_trans, pred_df)
+```
+
+```{r}
+# Drop Hyd.Pressure1
+drops <- c("Hyd.Pressure1")
+transformed_pred <- transformed_pred[,!(names(transformed_pred) %in% drops)]
+```
+
+```{r}
+# Add PH back to dataset
+transformed_pred <- cbind(to_predict[,"PH"], transformed_pred)
+names(transformed_pred)[1] <- ("PH")
+```
+
+```{r}
+pred_final <- predict(nnetPred, transformed_pred[,-1])
+```
+
+
+
