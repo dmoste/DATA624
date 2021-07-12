@@ -85,11 +85,11 @@ There are two files provided:
 ```{r load_data}
 
 # Load beverages data set into a dataframe
-df <- read_excel('C:/Users/wb508205/OneDrive - WBG/Documents/QSA/DATA Science CUNY/DATA 624 Predictive Analytics/HW2 & Project 2/StudentDataTOMODEL.xlsx')
-df_eval <- read_excel('C:/Users/wb508205/OneDrive - WBG/Documents/QSA/DATA Science CUNY/DATA 624 Predictive Analytics/HW2 & Project 2/StudentEvaluationTOPREDICT.xlsx')
+#df <- read_excel('C:/Users/wb508205/OneDrive - WBG/Documents/QSA/DATA Science CUNY/DATA 624 Predictive Analytics/HW2 & Project 2/StudentDataTOMODEL.xlsx')
+#df_eval <- read_excel('C:/Users/wb508205/OneDrive - WBG/Documents/QSA/DATA Science CUNY/DATA 624 Predictive Analytics/HW2 & Project 2/StudentEvaluationTOPREDICT.xlsx')
 
-#df = read.csv("https://raw.githubusercontent.com/dmoste/DATA624/main/Project2/StudentDataTOMODEL.csv", header = TRUE)
-#df_eval = read.csv("https://raw.githubusercontent.com/dmoste/DATA624/main/Project2/StudentEvaluationTOPREDICT.csv", header = TRUE)
+df = read.csv("https://raw.githubusercontent.com/dmoste/DATA624/main/Project2/StudentDataTOMODEL.csv", header = TRUE)
+df_eval = read.csv("https://raw.githubusercontent.com/dmoste/DATA624/main/Project2/StudentEvaluationTOPREDICT.csv", header = TRUE)
 
 # Exclude the empty PH column from the evaluation dataset
 df_eval <- df_eval %>%
@@ -99,38 +99,38 @@ df_eval <- df_eval %>%
 
 Below is a list of the variables of interest in the data set:
 
-`Brand Code`: categorical, values: A, B, C, D
-`Carb Volume`:
-`Fill Ounces`:
-`PC Volume`:
-`Carb Pressure`:
-`Carb Temp`:
+`Brand.Code`: categorical, values: A, B, C, D
+`Carb.Volume`:
+`Fill.Ounces`:
+`PC.Volume`:
+`Carb.Pressure`:
+`Carb.Temp`:
 `PSC`:
-`PSC Fill`:
-`PSC CO2`:
-`Mnf Flow`:
-`Carb Pressure1`:
-`Fill Pressure`:
-`Hyd Pressure1`:
-`Hyd Pressure2`:
-`Hyd Pressure3`:
-`Hyd Pressure4`:
-`Filler Level`:
-`Filler Speed`:
+`PSC.Fill`:
+`PSC.CO2`:
+`Mnf.Flow`:
+`Carb.Pressure1`:
+`Fill.Pressure`:
+`Hyd.Pressure1`:
+`Hyd.Pressure2`:
+`Hyd.Pressure3`:
+`Hyd.Pressure4`:
+`Filler.Level`:
+`Filler.Speed`:
 `Temperature`:
-`Usage cont`:
-`Carb Flow`:
+`Usage.cont`:
+`Carb.Flow`:
 `Density`:
 `MFR`:
 `Balling`:
-`Pressure Vacuum`:
+`Pressure.Vacuum`:
 `PH`: **TARGET to predict**
-`Bowl Setpoint`:
-`Pressure Setpoint`:
-`Air Pressurer`:
-`Alch Rel`:
-`Carb Rel`:
-`Balling Lvl`:
+`Bowl.Setpoint`:
+`Pressure.Setpoint`:
+`Air.Pressurer`:
+`Alch.Rel`:
+`Carb.Rel`:
+`Balling.Lvl`:
 
 ### Summary Stats
 
@@ -147,7 +147,7 @@ skim(df)
 There are numerous missing data--coded as NA--that will need to be imputed.
 Note that 4 rows are missing a `PH` value and will be dropped as they cannot be used for training.
 The basic histograms suggest that skewness is prevalent across features.
-Some of the skewed features appear to show near-zero variance, with a large number of 0 or even negative values, e.g. "Hyd Pressure1" and "Hyd Pressure2". 
+Some of the skewed features appear to show near-zero variance, with a large number of 0 or even negative values, e.g. "Hyd.Pressure1" and "Hyd.Pressure2". 
 In general, the skewness and imbalance may require imputation.
 
 ### Check Target Bias
@@ -182,7 +182,7 @@ gg_miss_upset(df)
 ```
 
 Notice that approximately 8.25 percent of the rows are missing a value for `MFR`. This will be dropped to avoid the potential negative consequences of imputation. 
-Additionally, the categorical feature `Brand Code` is missing approximately 4.67 percent of its values and will create a new feature category 'Unknown' consisting of missing values.
+Additionally, the categorical feature `Brand.Code` is missing approximately 4.67 percent of its values and will create a new feature category 'Unknown' consisting of missing values.
 
 ### Distributions
 
@@ -192,7 +192,7 @@ We visualize the distributions of each of the predictor features. This will help
 # Prepare data for ggplot
 gather_df <- df %>% 
   drop_na() %>%
-  dplyr::select(-c(PH, `Brand Code`)) %>%
+  dplyr::select(-c(PH, `Brand.Code`)) %>%
   gather(key = 'variable', value = 'value')
 # Histogram plots of each variable
 ggplot(gather_df) + 
@@ -211,7 +211,7 @@ Lets use boxplots to understand the spread of each feature.
 ```{r, fig.height = 10, fig.width = 10, echo=FALSE}
 # Prepare data for ggplot
 gather_df <- df %>% 
-  dplyr::select(-c(PH, `Brand Code`)) %>%
+  dplyr::select(-c(PH, `Brand.Code`)) %>%
   tidyr::drop_na() %>%
   gather(key = 'variable', value = 'value')
 # Boxplots for each variable
@@ -231,7 +231,7 @@ We next quantify the relationships visualized above. In general, our model shoul
 # Show feature correlations/target by decreasing correlation
 
 df_features <- df %>% 
-  dplyr::select(-c(PH, `Brand Code`))
+  dplyr::select(-c(PH, `Brand.Code`))
 df_features$PH <- df$PH
 df_features <- df_features %>%
   drop_na
@@ -241,7 +241,7 @@ stack(sort(cor(df_features[, feature_count + 1], df_features[,1:feature_count])[
            decreasing=TRUE))
 ```
 
-It appears that `Bowl Setpoint`, `Filler Level`, `Carb Flow`, `Pressure Vacuum`, `Carb Rel`, `Alch Rel` and ` Oxygen Filler` have the highest correlations (positive) with `PH`, while `Mnf Flow`, `Usage cont`, `Fill Pressure`, `Pressure Setpoint`, `Hyd Pressure3`, and `Hyd Pressure2` have the strongest negative correlations with `PH`. 
+It appears that `Bowl.Setpoint`, `Filler.Level`, `Carb.Flow`, `Pressure.Vacuum`, `Carb.Rel`, `Alch.Rel` and ` Oxygen.Filler` have the highest correlations (positive) with `PH`, while `Mnf.Flow`, `Usage.cont`, `Fill.Pressure`, `Pressure.Setpoint`, `Hyd.Pressure3`, and `Hyd.Pressure2` have the strongest negative correlations with `PH`. 
 All others have a weak or slightly negative correlation, which implies they have less predictive power.
 
 ### Multicollinearity
@@ -252,7 +252,7 @@ Lets check for correlation between predictive features, or multicollinearity.
 
 # Calculate and plot the Multicollinearity
 df_features <- df %>%
-  dplyr::select(-c(`Brand Code`))
+  dplyr::select(-c(`Brand.Code`))
 correlation = cor(df_features, use = 'pairwise.complete.obs')
 corrplot(correlation, 'ellipse', type = 'lower', order = 'hclust',
          col=brewer.pal(n=8, name="RdYlBu"))
@@ -275,7 +275,7 @@ nzv[nzv$nzv,][1:5,] %>% drop_na()
 
 ```
 
-`Hyd Pressure1` will be dropped.
+`Hyd.Pressure1` will be dropped.
 
 
 ## 2. Data Preparation
@@ -285,23 +285,23 @@ What have we done so far.
 ### Eliminated Fields/Variables
 
    `MFR` has lots of missing values that exceed 8%.
-   `Hyd Pressure1` shows near zero variance.
+   `Hyd.Pressure1` shows near zero variance.
 
 ```{r}
 # Remove the fields from our training data
 df_clean <- df %>%
-  dplyr::select(-c(MFR, `Hyd Pressure1`))
+  dplyr::select(-c(MFR, `Hyd.Pressure1`))
 
 # remove the fields from our evaluation data
 df_eval_clean <- df_eval %>%
-  dplyr::select(-c(MFR, `Hyd Pressure1`))
+  dplyr::select(-c(MFR, `Hyd.Pressure1`))
   
 ```
 
 ### Drop Missing Values
 
    We need to drop 4 `PH`rows with missing values
-   Replace missing values for `Brand Code` with "Unknown"
+   Replace missing values for `Brand.Code` with "Unknown"
    Impute remaining missing values using `kNN()`
 
 ```{r}
@@ -311,23 +311,23 @@ set.seed(100)
 df_clean <- df_clean %>%
   filter(!is.na(PH))
 
-# Change Brand Code missing to 'Unknown' in our training dataset
+# Change Brand.Code missing to 'Unknown' in our training dataset
 brand_code <- df_clean %>%
-  dplyr::select(`Brand Code`) %>%
-  replace_na(list(`Brand Code` = 'Unknown'))
-df_clean$`Brand Code` <- brand_code$`Brand Code`
+  dplyr::select(`Brand.Code`) %>%
+  replace_na(list(`Brand.Code` = 'Unknown'))
+df_clean$`Brand.Code` <- brand_code$`Brand.Code`
 
-# Change Brand Code missing to 'Unknown' in our evaluation dataset
+# Change Brand.Code missing to 'Unknown' in our evaluation dataset
 brand_code <- df_eval_clean %>%
-  dplyr::select(`Brand Code`) %>%
-  replace_na(list(`Brand Code` = 'Unknown'))
-df_eval_clean$`Brand Code` <- df_eval_clean$`Brand Code`
+  dplyr::select(`Brand.Code`) %>%
+  replace_na(list(`Brand.Code` = 'Unknown'))
+df_eval_clean$`Brand.Code` <- df_eval_clean$`Brand.Code`
 
-# There is an edge case where our Eval data might have a `Brand Code` not seen in our training set
+# There is an edge case where our Eval data might have a `Brand.Code` not seen in our training set
 # If so, let's convert them to 'Unknown'
-codes <- unique(df_clean$`Brand Code`)
+codes <- unique(df_clean$`Brand.Code`)
 df_eval_clean <- df_eval_clean %>%
-  mutate(`Brand Code`  = if_else(`Brand Code` %in% codes, `Brand Code`, 'Unknown'))
+  mutate(`Brand.Code`  = if_else(`Brand.Code` %in% codes, `Brand.Code`, 'Unknown'))
 
 # Use the kNN imputing method to impute missing values
 df_clean <- df_clean %>% 
@@ -343,12 +343,12 @@ df_eval_clean <- df_eval_clean %>%
 
 ### Convert Categorical to Dummy
 
-`Brand Code` is a categorical variable with values A, B, C, D and Unknown. We convert it to a set of dummy columns for modeling.
+`Brand.Code` is a categorical variable with values A, B, C, D and Unknown. We convert it to a set of dummy columns for modeling.
 
 ```{r message=FALSE, warning=FALSE}
 
-# Training data - Convert our `Brand Code` column into a set of dummy variables
-df_clean_dummy <- dummyVars(PH ~ `Brand Code`, data = df_clean)
+# Training data - Convert our `Brand.Code` column into a set of dummy variables
+df_clean_dummy <- dummyVars(PH ~ `Brand.Code`, data = df_clean)
 dummies <- predict(df_clean_dummy, df_clean)
 
 # Get the dummy column names
@@ -360,16 +360,16 @@ dummies <- as.tibble(dummies) %>%
 
 # remove the original categorical feature
 df_clean <- df_clean %>%
-  dplyr::select(-`Brand Code`)
+  dplyr::select(-`Brand.Code`)
 
 # add the new dummy columns to our main training dataframe
 df_clean <- cbind(dummies, df_clean)
 
-# Evaluation data - Convert our `Brand Code` column into a set of dummy variables
+# Evaluation data - Convert our `Brand.Code` column into a set of dummy variables
 df_eval_clean$PH <- 1
 eval_dummies <- predict(df_clean_dummy, df_eval_clean)
 
-# If the eval dataset doesn't have a specific `Brand Code` lets add dummy columns with all 0's.
+# If the eval dataset doesn't have a specific `Brand.Code` lets add dummy columns with all 0's.
 for (c in dummy_cols) {
   if (!(c %in% colnames(eval_dummies))) {
     eval_dummies[c] <- 0
@@ -383,7 +383,7 @@ eval_dummies <- as.tibble(eval_dummies) %>%
 
 # remove the original categorical feature
 df_eval_clean <- df_eval_clean %>%
-  dplyr::select(-c(`Brand Code`, PH))
+  dplyr::select(-c(`Brand.Code`, PH))
 
 # add the new dummy columns to our main eval dataframe
 df_eval_clean <- cbind(eval_dummies, df_eval_clean)
@@ -544,7 +544,7 @@ results %>% dplyr::select(Model, RMSE, Rsquared, MAE)
 
 ## 4. Model Selection
 
-Based on evaluating both RMSE and $R^2$, MARS slightly outperformed SVM.
+Based on evaluating both RMSE and $R^2$, MARS slightly outperformed SVM. MARS also has a better MAPE at 1.14.
 
 
 ```{r}
