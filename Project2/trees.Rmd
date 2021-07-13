@@ -1,0 +1,174 @@
+---
+title: "Trees"
+author: "Patrick Maloney"
+date: "7/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+data <- read.csv("https://raw.githubusercontent.com/dmoste/DATA624/main/Project2/StudentDataTOMODEL.csv")
+
+library(plyr)
+data[,1] <- mapvalues(data[,1],
+                      from = c("A","B","C","D",""),
+                      to = c(1,2,3,4,NA))
+data[,1] <- as.integer(data[,1])
+
+# Removing the response variable since I don't want to impute or transform these values
+drops <- c("PH")
+features <- data[,!(names(data) %in% drops)]
+
+na_to_mean <- function(x) replace(x, is.na(x), mean(x, na.rm = TRUE))
+features[] <- lapply(features, na_to_mean)
+
+processed <- cbind(data[,26], features)
+names(processed)[1] <- ("PH")
+
+# Checking if any of the pH data is missing
+summary(processed$PH)
+
+processed <- processed[complete.cases(processed),]
+```
+
+# Split Data and Train Model
+
+```{r}
+set.seed(12345)
+train_ind <- sample(seq_len(nrow(processed)),
+                    size = floor(0.75*nrow(processed)))
+
+train <- processed[train_ind,]
+test <- processed[-train_ind,]
+
+head(train)
+```
+
+lets run a simple random forest model as a baseline
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(caret)
+library(randomForest)
+
+rf <- randomForest(PH ~ ., data = train, ntrees = 500)
+varImpPlot(rf)
+rf
+test_rf <- predict(rf, test)
+
+caret_test_rf <- data.frame(cbind(test_rf,test[,1]))
+colnames(caret_test_rf) <- c("caret","actual")
+caret_test_rf <- caret_test_rf %>%
+  mutate(pe = abs(actual - caret)/actual)
+
+MAPE <- (mean(caret_test_rf$pe))*100
+MAPE
+
+ggplot(caret_test_rf, aes(x = actual, y = caret)) +
+  geom_line() +
+  geom_point()
+
+```
+```{r}
+library(gbm)
+
+boosted <- gbm(PH ~ ., data = train, distribution = "gaussian", n.trees = 500, shrinkage = 0.1)
+boosted
+test_boosted <- predict(boosted, test)
+
+caret_test_boosted <- data.frame(cbind(test_boosted,test[,1]))
+colnames(caret_test_boosted) <- c("caret","actual")
+caret_test_boosted <- caret_test_boosted %>%
+  mutate(pe = abs(actual - caret)/actual)
+
+MAPE <- (mean(caret_test_boosted$pe))*100
+MAPE
+
+ggplot(caret_test_boosted, aes(x = actual, y = caret)) +
+  geom_line() +
+  geom_point()
+
+
+```
+
+```{r}
+
+features2 <- data[,!(names(data) %in% drops)]
+
+na_to_med <- function(x) replace(x, is.na(x), median(x, na.rm = TRUE))
+features2[] <- lapply(features2, na_to_med)
+
+trans <- preProcess(features2,
+                    method = c("BoxCox", "center", "scale"))
+transformed_feat <- predict(trans, features2)
+
+processed2 <- cbind(data[,26], transformed_feat)
+names(processed2)[1] <- ("PH")
+
+
+processed2 <- processed2[complete.cases(processed2),]
+
+#split data
+set.seed(12345)
+train_ind <- sample(seq_len(nrow(processed)),
+                    size = floor(0.75*nrow(processed)))
+
+train2 <- processed[train_ind,]
+test2 <- processed[-train_ind,]
+
+#model
+
+rf2 <- randomForest(PH ~ ., data = train2, ntrees = 500)
+varImpPlot(rf2)
+rf2
+test_rf2 <- predict(rf2, test2)
+
+caret_test_rf2 <- data.frame(cbind(test_rf2,test2[,1]))
+colnames(caret_test_rf2) <- c("caret","actual")
+caret_test_rf2 <- caret_test_rf2 %>%
+  mutate(pe = abs(actual - caret)/actual)
+
+MAPE2 <- (mean(caret_test_rf2$pe))*100
+MAPE2
+
+ggplot(caret_test_rf2, aes(x = actual, y = caret)) +
+  geom_line() +
+  geom_point()
+```
+
+The model with the transformed predictor variables and median imputation produced the same MAPE value as the baseline model. This makes some sense since the random forest algorithm is based on partitioning of the data by certain variable values. 
+
+Predictions
+
+```{r}
+data2 <- read.csv("https://raw.githubusercontent.com/dmoste/DATA624/main/Project2/StudentEvaluationTOPREDICT.csv")
+
+data2[,1] <- mapvalues(data2[,1],
+                      from = c("A","B","C","D",""),
+                      to = c(1,2,3,4,NA))
+data2[,1] <- as.integer(data2[,1])
+
+# Removing the response variable since I don't want to impute or transform these values
+drops <- c("PH")
+features3 <- data2[,!(names(data2) %in% drops)]
+
+na_to_mean <- function(x) replace(x, is.na(x), mean(x, na.rm = TRUE))
+features3[] <- lapply(features3, na_to_mean)
+
+
+preds <- predict(rf, features3)
+
+preds
+
+```
+
+
+
+
+
+
+
