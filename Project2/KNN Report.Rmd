@@ -243,8 +243,6 @@ kknn_mape <- data.frame(matrix(nrow = 0, ncol = 4))
 seeds <- c(1234567,2345671,3456712,4567123,5671234,6712345,7123456)
 
 for(i in seeds){
-  print(i)
-  
   set.seed(i)
   train_ind3 <- sample(seq_len(nrow(processed)),
                       size = floor(0.75*nrow(processed)))
