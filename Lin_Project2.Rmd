@@ -19,6 +19,9 @@ library(tidyverse)
 ```{r}
 # Load data
 to_model <- read.csv("https://raw.githubusercontent.com/lincarrieli/Data624/main/StudentData%20-%20TO%20MODEL.csv")
+
+rename(to_model, Brand.Code = ï..Brand.Code)
+
 to_predict <- read.csv("https://raw.githubusercontent.com/lincarrieli/Data624/main/StudentEvaluation-%20TO%20PREDICT.csv")
 ```
 

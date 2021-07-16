@@ -355,7 +355,7 @@ dummies <- predict(df_clean_dummy, df_clean)
 dummy_cols <- sort(colnames(dummies))
 
 # Make sure the new dummy columns are sorted in alpha order (to make sure our columns will match the eval dataset)
-dummies <- as.tibble(dummies) %>%
+dummies <- as_tibble(dummies) %>%
   dplyr::select(dummy_cols)
 
 # remove the original categorical feature
@@ -378,7 +378,7 @@ for (c in dummy_cols) {
 
 # Now sort the eval_dummy columns so they match the training set dummies
 eval_dummy_cols <- sort(colnames(eval_dummies))
-eval_dummies <- as.tibble(eval_dummies) %>%
+eval_dummies <- as_tibble(eval_dummies) %>%
   dplyr::select(eval_dummy_cols)
 
 # remove the original categorical feature
