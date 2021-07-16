@@ -1,0 +1,343 @@
+---
+title: "KNN Report"
+author: "David Moste"
+date: "7/16/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Our Goal
+
+Since our goal was to create a model with the most predictive power (based on MAPE), we chose to sacrifice a little bit on interprability for the sake of performance. With this in mind, the model we chose to use to make predictions was the lowest MAPE model, which was a KNN model.
+
+# Imputation
+
+To create the model, the data needed to undergo some preprocessing. The first step of this was to impute any missing values, which was done by replacing with the mean of each predictor. This method was chosen since the number of missing values was extremely small and since the large number of predictor variables meant that the distance between observations shouldn't be impacted too much by a single missing predictor that was set to the mean.
+
+```{r}
+library(plyr)
+
+data <- read.csv("https://raw.githubusercontent.com/dmoste/DATA624/main/Project2/StudentDataTOMODEL.csv")
+
+data[,1] <- mapvalues(data[,1],
+                      from = c("A","B","C","D",""),
+                      to = c(1,2,3,4,NA))
+data[,1] <- as.integer(data[,1])
+
+# Removing the response variable since I don't want to impute or transform these values
+drops <- c("PH")
+features <- data[,!(names(data) %in% drops)]
+
+na_to_mean <- function(x) replace(x, is.na(x), mean(x, na.rm = TRUE))
+features[] <- lapply(features, na_to_mean)
+```
+
+# Transformation
+
+Next, the data had to be transformed. KNN is highly susceptible to data that is on different scales (large values will be much further from each other than small values). With this in mind, we chose to center and scale all of our predictors after running BoxCox transformation where neccessary. The final step of preprocessing was to remove any predictors that had near-zero variance so that there were no overlapping predictors.
+
+```{r}
+library(caret)
+
+trans <- preProcess(features,
+                    method = c("BoxCox", "center", "scale"))
+transformed_feat <- predict(trans, features)
+
+nzv <- nearZeroVar(transformed_feat, saveMetrics = TRUE)
+nzv[nzv[,"nzv"] == TRUE,]
+
+# Removing Hy.Pressure1 since it has near zero variance
+drops <- c("Hyd.Pressure1")
+transformed_feat <- transformed_feat[,!(names(transformed_feat) %in% drops)]
+```
+
+# Building Models
+
+At this point, we were ready to build our models. We started by spliting our data into training and testing sets.
+
+```{r}
+processed <- cbind(data[,26], transformed_feat)
+names(processed)[1] <- ("PH")
+
+processed <- processed[complete.cases(processed),]
+
+set.seed(54321)
+train_ind <- sample(seq_len(nrow(processed)),
+                    size = floor(0.75*nrow(processed)))
+
+train <- processed[train_ind,]
+test <- processed[-train_ind,]
+```
+
+There are several important factors that need to be considered for any KNN model. These factors are number of nearest neighbors, distance formula, and weighting.
+
+#### Number of Nearest Neighbors - k
+
+KNN stands for k-nearest neighbors where the k is a stand in for how many neighbors are used in determining the prediction. This is a tuneable feature of any KNN model and is best found through creating a variety of models with different values and then reviewing the appropriate prediction metric.
+
+#### Distance Formula
+
+The distance formula is the way in which the distance between two observations is computed. Some options here include Manhattan, Euclidean, Cosine, Jaccard, among many others.
+
+#### Weighting (also known as kernel)
+
+This describes, quite literally, how much weight is given to each observation. A common technique is to give more weight to observations that are closer to the point in question. Like distance, there are many different options/formulas to use to determine weight. These include rectangular, triangular, buweight, triweight, and many many more.
+
+#### Model 1
+
+Our first KNN model was built using the caret library. This model found a minimum MAPE of 1.098% with a k value of 5. The values for distance and weight are not accessible via this package.
+
+```{r}
+library(caret)
+library(ggplot2)
+library(tidyverse)
+
+#### train from caret ####
+knnModel <- train(train[,-1],
+                 train[,1],
+                 method = "knn",
+                 tuneGrid = data.frame(.k = 1:20),
+                 trControl = trainControl(method = "cv"))
+
+ggplot(data = knnModel$results, aes(x = k, y = RMSE)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Caret: k distribution",
+       x = "k",
+       y = "MAPE")
+
+# Check best model
+knnPred <- predict(knnModel, newdata = test[,-1])
+
+model1 <- data.frame(cbind(knnPred,test[,1]))
+colnames(model1) <- c("predicted","actual")
+model1 <- model1 %>%
+  mutate(pe = abs(actual - predicted)/actual)
+
+MAPE <- (mean(model1$pe))*100
+MAPE
+```
+
+#### Model 2
+
+The second model was built using the fnn library. This model gave a minimum MAPE of 1.098% with a k value of 5.This is the same as the caret model. Again, changing weights and distances was not accessible through this library.
+
+```{r}
+library(FNN)
+library(ggplot2)
+
+fnn_func <- function(train_x, train_y, test_x, test_y){
+  mape_df <- data.frame(matrix(nrow = 0, ncol = 2))
+  
+  for(i in 1:20){
+    knn_fnn <- knn.reg(train = train_x,
+                       test = test_x,
+                       y = train_y,
+                       k = i,
+                       algorithm = "brute")
+    
+    mape <- mean(abs(test_y - knn_fnn$pred)/test_y)*100
+    mape_df <- rbind(mape_df,c(i,mape))
+  }
+
+  colnames(mape_df) <- c("k", "MAPE")
+  mape_df[,1] <- as.integer(mape_df[,1])
+  mape_df[,2] <- as.numeric(mape_df[,2])
+  return(mape_df)
+}
+
+fnn_mape <- fnn_func(train[,-1], train[,1], test[,-1], test[,1])
+
+ggplot(data = fnn_mape, aes(x = k, y = MAPE)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "FNN: k distribution",
+       x = "k",
+       y = "MAPE")
+```
+
+#### Model 3
+
+The third model we built used the kknn library. With this library we were able to dest different distances as well as different weights (kernels). This model found that a k value of 9 with a distance of 1 (Manhattan) and a weighting function of triweight produced the best model with a MAPE of 0.845%.
+
+```{r}
+library(kknn)
+library(ggplot2)
+
+kknn_func <- function(train_x, train_y, test_x, test_y){
+  mape_df <- data.frame(matrix(nrow = 0, ncol = 4))
+  
+  weights <- c("rectangular","triangular",
+               "biweight","triweight")
+  
+  for(d in 1:3){
+    for(w in weights){
+      for(i in 2:30){
+        kknnModel <- kknn(train_y ~ .,
+                          train_x,
+                          test_x,
+                          k = i,
+                          distance = d,
+                          kernel = w)
+        
+        mape <- mean(abs(test_y - kknnModel$fitted.values)/test_y)*100
+        mape_df <- rbind(mape_df,c(i,mape,w,d))
+      }
+    }
+  }
+  colnames(mape_df) <- c("k", "MAPE","Weight","Distance")
+  mape_df[,1] <- as.integer(mape_df[,1])
+  mape_df[,2] <- as.numeric(mape_df[,2])
+  mape_df[,4] <- as.integer(mape_df[,4])
+  return(mape_df)
+}
+
+kknn_mape <- kknn_func(train[,-1], train[,1], test[,-1], test[,1])
+
+ggplot(data = kknn_mape, aes(x = k, y = MAPE, color = Weight)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "KKNN: k distribution",
+       x = "k",
+       y = "MAPE")
+```
+
+#### Tuning Model 3
+
+Since the third model far outperformed the others, we decided to tune it by scrambling our train/test sets and finding an optimal value of k while using a triweight weighting function and Manhattan distance. We found that the best values for MAPE are all really close. K values between 17 and 20 all produce a MAPE of approximately 0.906%, with k = 18 being the best value by the slimmest of margins.
+
+```{r}
+library(kknn)
+library(ggplot2)
+
+# Changing the kkhn function to accept seed values and only run a triweight model on Manhattan distance
+kknn_func <- function(train_x, train_y, test_x, test_y, seed){
+  mape_df <- data.frame(matrix(nrow = 0, ncol = 4))
+  
+  for(i in 2:30){
+    kknnModel <- kknn(train_y ~ .,
+                      train_x,
+                      test_x,
+                      k = i,
+                      distance = 1,
+                      kernel = "triweight")
+    
+    mape <- mean(abs(test_y - kknnModel$fitted.values)/test_y)*100
+    rmse <- sqrt(mean((test_y - kknnModel$fitted.values)^2))
+    mape_df <- rbind(mape_df,c(i,mape,rmse,seed))
+    
+    colnames(mape_df) <- c("k", "MAPE", "RMSE", "Seed")
+    mape_df[,1] <- as.integer(mape_df[,1])
+    mape_df[,2] <- as.numeric(mape_df[,2])
+    mape_df[,3] <- as.numeric(mape_df[,3])
+    mape_df[,4] <- as.factor(mape_df[,4])
+  }
+  return(mape_df)
+}
+
+# Re-sample the data with 7 different test/train sets
+kknn_mape <- data.frame(matrix(nrow = 0, ncol = 4))
+seeds <- c(1234567,2345671,3456712,4567123,5671234,6712345,7123456)
+
+for(i in seeds){
+  print(i)
+  
+  set.seed(i)
+  train_ind3 <- sample(seq_len(nrow(processed)),
+                      size = floor(0.75*nrow(processed)))
+  
+  train3 <- processed[train_ind3,]
+  test3 <- processed[-train_ind3,]
+  
+  current_mape <- kknn_func(train3[,-1],
+                            train3[,1],
+                            test3[,-1],
+                            test3[,1],
+                            i)
+  kknn_mape <- rbind(kknn_mape, current_mape)
+}
+
+colnames(kknn_mape) <- c("k", "MAPE", "RMSE", "Seed")
+kknn_mape[,1] <- as.integer(kknn_mape[,1])
+kknn_mape[,2] <- as.numeric(kknn_mape[,2])
+kknn_mape[,3] <- as.numeric(kknn_mape[,3])
+kknn_mape[,4] <- as.factor(kknn_mape[,4])
+
+ggplot(data = kknn_mape, aes(x = k, y = MAPE, color = Seed)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "KKNN: k distribution",
+       x = "k",
+       y = "MAPE")
+
+# Check which value of k performs the best on average
+mape_mean <- aggregate(kknn_mape[,2], list(kknn_mape$k), mean)
+mape_sd <- aggregate(kknn_mape[,2], list(kknn_mape$k), sd)
+mape_data <- cbind(mape_mean, mape_sd[,2]) %>%
+  mutate(LB = x - mape_sd[,2], UB = x + mape_sd[,2])
+colnames(mape_data) <- c("k", "MAPE", "SD", "LB", "UB")
+
+# Visualize the aggregate data
+ggplot(data = mape_data, aes(x = k, y = MAPE)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = LB, ymax = UB), alpha = 0.2) +
+  labs(title = "KKNN: k distribution",
+       x = "k",
+       y = "MAPE")
+```
+
+# Make Predictions
+
+Now that we have our model, we can go ahead and make predictions! We need to apply all the same methods to the prediction data as we did to our modeling data.
+
+```{r}
+library(plyr)
+library(caret)
+library(kknn)
+
+# Read in the data
+predict_df <- read.csv("https://raw.githubusercontent.com/dmoste/DATA624/main/Project2/StudentEvaluationTOPREDICT.csv")
+
+# Check for missing data
+missing_data <- sapply(predict_df, function(x) sum(is.na(x)))
+missing_data <- data.frame(missing_data)
+
+# Remove PH and Hyd.Pressure1 from the features data
+drops <- c("PH", "Hyd.Pressure1")
+predict_features <- predict_df[,!(names(predict_df) %in% drops)]
+
+# Map Brand.Code values to numerical options
+predict_features[,1] <- mapvalues(predict_features[,1],
+                                  from = c("A","B","C","D",""),
+                                  to = c(1,2,3,4,NA))
+predict_features[,1] <- as.integer(predict_features[,1])
+
+# Replace missing values with the mean of the predictor
+na_to_mean <- function(x) replace(x, is.na(x), mean(x, na.rm = TRUE))
+predict_features[] <- lapply(predict_features, na_to_mean)
+
+# Apply BoxCox transformations, center the data, and scale it
+trans <- preProcess(predict_features,
+                    method = c("BoxCox", "center", "scale"))
+transformed_feat <- predict(trans, predict_features)
+
+# Recombine the PH response with the transformed features
+predict_df <- cbind(predict_df[,26], transformed_feat)
+names(predict_df)[1] <- ("PH")
+
+# Train and predict using the model decided from the modeling data
+kknn_fit <- kknn(train[,1] ~ .,
+                train[,-1],
+                predict_df[,-1],
+                k = 18,
+                distance = 1,
+                kernel = "triweight")
+
+predictions <- data.frame(kknn_fit$fitted.values)
+```
+
+
+
