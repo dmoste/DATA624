@@ -1,12 +1,19 @@
 ---
 title: 'DATA 624 Proj 2: Linear Models'
-author: "Daniel Moscoe"
-date: "7/8/2021"
-output: html_document
+author: "S. Kigamba, L. Li, P. Maloney, D. Moscoe, and D. Moste"
+date: "7/16/2021"
+output:
+  html_document:
+    df_print: paged
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Ordinary Least Squares
+
+```{r include = FALSE}
 library(tidyverse)
 library(caret)
 library(corrplot)
@@ -14,16 +21,15 @@ library(pls)
 set.seed(0707)
 ```
 
-## Import
+
+## Impute missing data
 
 ```{r}
+#Import
+
 initial_import.df <- read.csv("https://raw.githubusercontent.com/dmoste/DATA624/main/Project2/StudentDataTOMODEL.csv")
 to_predict.df <- read.csv("https://raw.githubusercontent.com/dmoste/DATA624/main/Project2/StudentEvaluationTOPREDICT.csv")
-```
 
-## Tidy
-
-```{r}
 #Drop missing PH rows
 initial_import.df <- initial_import.df %>%
   filter(!is.na(PH))
@@ -33,19 +39,23 @@ preds.df <- initial_import.df[,-26]
 resp.df <- initial_import.df[,26]
 ```
 
-## Transform
-
 ```{r}
 #Impute missing values with medians
+
 brand_code <- preds.df[,1]
 preds.df <- lapply(preds.df[,2:ncol(preds.df)], function(x) replace(x, is.na(x), median(x, na.rm = TRUE)))
 preds.df <- as.data.frame(preds.df)
 preds.df$`Brand.Code` <- brand_code
 
 #Impute missing Brand Code as "C"
+
 brand.code_na <- preds.df$Brand.Code == ""
 preds.df[brand.code_na,32] <- "C"
+```
 
+## Transform data
+
+```{r}
 #Drop low-variance variable
 preds.df <- preds.df[,-12]
 
@@ -61,7 +71,10 @@ test_preds.df <- preds.df[-training_rows,]
 test_resp.df <- resp.df[-training_rows]
 ```
 
-## Model: Ordinary Least Squares
+
+## Check model assumptions
+
+One important assumption for ordinary least squares models is that variables are uncorrelated with each other. To check this assumption, we search for highly correlated variables. While removing these variables doesn't guarantee an absence of multicollinearity, it is a useful first step, and can reduce the total number of variables in the model.  
 
 Since this section will be about linear models, let's search for highly correlated variables. While removing these variables doesn't guarantee an absence of multicollinearity, it is a useful first step, and can reduce the total number of variables in the model.
 
@@ -72,20 +85,21 @@ corr_matrix <- cbind(train_preds.df, train_resp.df) %>%
 corrplot::corrplot(corr_matrix, method = "circle", is.corr = TRUE)
 ```
 
-Groups of variables that are highly correlated: `Alch Rel` `Density`, `Balling`, `Carb Rel`, `Balling Lvl`;
-`Air Pressurer` `Carb Rel`, `Balling Lvl`;
-`Bowl Setpoint`, `Filler Level`;
-`Filler Speed`, `MFR`;
-`Hyd Pressure2`, `Hyd Pressure3`;
-`Carb Temp`, `Carb Pressure`.
+Groups of variables that are highly correlated:  
+`Alch Rel` `Density`, `Balling`, `Carb Rel`, `Balling Lvl`;  
+`Air Pressurer` `Carb Rel`, `Balling Lvl`;  
+`Bowl Setpoint`, `Filler Level`;  
+`Filler Speed`, `MFR`;  
+`Hyd Pressure2`, `Hyd Pressure3`;  
+`Carb Temp`, `Carb Pressure`.  
 
 To avoid collinearity in a linear model, we eliminate some of the most highly correlated variables:  
-Keep `Balling` and drop `Balling Lvl` and Density;
-Keep `Alch Rel` and drop `Carb Rel`;
-Keep `Bowl Setpoint` and drop `Filler Level`;
-Keep `MFR` and drop `Filler Speed`;
-Keep `Hyd Pressure2` and drop `Hyd Pressure3`;
-Keep `Carb Pressure` and drop `Carb Temp`.
+Keep `Balling` and drop `Balling Lvl` and Density;  
+Keep `Alch Rel` and drop `Carb Rel`;  
+Keep `Bowl Setpoint` and drop `Filler Level`;  
+Keep `MFR` and drop `Filler Speed`;  
+Keep `Hyd Pressure2` and drop `Hyd Pressure3`;  
+Keep `Carb Pressure` and drop `Carb Temp`.  
 
 ```{r}
 train_preds2.df <- train_preds.df %>%
@@ -105,7 +119,13 @@ corrplot::corrplot(corr_matrix, method = "circle", is.corr = TRUE)
 
 ```
 
-There are still some large correlations remaining, for example, between `Balling` and `Alch Rel`. But because I know Balling is a measure of sugar content, and I expect that sugar content is related to pH, I'm going to keep it for now. `Mnf Flow` is also correlated to many other variables. It may drop out of a linear model later on.
+There are still some large correlations remaining, for example, between `Balling` and `Alch Rel`. But because I know Balling is a measure of sugar content, and I expect that sugar content is related to pH, I'm going to keep it for now. `Mnf Flow` is also correlated to many other variables. It may drop out of a linear model later on.  
+
+Another assumption for fitting the OLS linear model are that predictors are normally distributed. By applying a Box-Cox transformation to the data in the **Transform Data** section above, we make sure the data roughly conforms to this assumption.  
+
+After fitting a model, we'll check the final assumption-- that residuals have mean zero with approximately constant variance.  
+
+## Fit model
 
 ```{r}
 #OLS
@@ -114,32 +134,25 @@ train1.lm <- train(train_preds2.df, train_resp.df,
                    method = "lm")
 summary(train1.lm)
 ```
-Note RMSE = 0.1345.
 
 ```{r}
 train1_MAPE <- 100 * (sum(abs(train1.lm$finalModel$residuals) / train_resp.df)) / length(train_resp.df)
 ```
 
-MAPE = 1.217.
-
-Before we move on to other models, let's prune variables with p > 0.05.
+This initial model has MAPE = 1.217 and RMSE 0.1345. We refine the model by removing variables that have low explanatory power (p > 0.05).
 
 ```{r}
 train2.lm <- train(train_preds2.df[,c(3, 8:11, 13:15, 17:21, 23, 24)], train_resp.df, method = "lm")
 summary(train2.lm)
 ```
 
-RMSE = 0.1345.
-
 ```{r}
 train2_MAPE <- 100 * (sum(abs(train2.lm$finalModel$residuals) / train_resp.df)) / length(train_resp.df)
 ```
 
-MAPE: 1.219.  
+The refined model has MAPE = 1.219 and RMSE = 0.1345.
 
 After dropping variables with high p-values, the simpler model retains almost all its explanatory power.
-
-## Visualize
 
 ```{r}
 #Actual vs predicted
@@ -151,6 +164,8 @@ plot(x = train_resp.df, y = train2.lm$finalModel$fitted.values,
 
 The plot of fitted vs actual values for the training data shows a clear positive linear relationship, although variability is large. The large variability corresponds to the relatively low value of $R^2 = 0.40$.
 
+## Examine residuals
+
 ```{r}
 #Predicted vs residual
 plot(x = train2.lm$finalModel$fitted.values, y = train2.lm$finalModel$residuals,
@@ -161,9 +176,17 @@ plot(x = train2.lm$finalModel$fitted.values, y = train2.lm$finalModel$residuals,
 
 The residuals appear to be randomly distributed with roughly constant variability about a mean of zero.
 
-## Model: Partial Least Squares
+## Compute model metrics
 
-Because there is large possibility of multicollinearity in linear models involving this data, feature selection is an important part of the modeling process. Partial least squares performs a kind of feature selection, because it generates new uncorrelated predictors based on "underlying... relationships among the predictors which are highly correlated with the response (KJ 114).
+For the refined model, MAPE = 1.217, and RMSE = 0.1345.
+
+# Partial Least Squares
+
+## Check model assumptions
+
+Because many of the variables in this data set exhibit high correlation, using this data with linear models risks violating the assumption of no multicollinearity. One way to deal with the risk of multicollinearity is to employ a model that performs feature selection, such as partial least squares. Partial least squares performs a kind of feature selection, because it generates new uncorrelated predictors based on "underlying... relationships among the predictors which are highly correlated with the response (Kuhn and Johnson 114). The other modeling assumptions are addressed by transforming the data as described in the corresponding section for OLS. 
+
+## Fit model
 
 ```{r}
 train.pls <- train(train_preds.df, train_resp.df,
@@ -174,26 +197,6 @@ train.pls <- train(train_preds.df, train_resp.df,
 
 ```{r}
 summary(train.pls)
-plot(x = train.pls$results$ncomp, y = train.pls$results$RMSE,
-     xlab = "Number of components in PLS model",
-     ylab = "RMSE",
-     main = "RMSE declines then stabilizes with increase in PLS components")
-```
-
-The optimal number of components for the PLS model is 13.
-
-```{r}
-print("RMSE:")
-print(train.pls$results$RMSE[13])
-print("R^2:")
-print(train.pls$results$Rsquared[13])
-
-PLS_resid <- train.pls$finalModel$residuals[, 1, 13]
-train_PLS_MAPE <- (100 / length(train_resp.df)) * sum(abs(PLS_resid /train_resp.df))
-
-print("MAPE:")
-print(train_PLS_MAPE)
-
 ```
 
 Examining the actual and predicted values of the response variable:
@@ -207,6 +210,10 @@ plot(x = train_resp.df, y = train.pls_predicted,
      main = "Fitted vs actual pH values for training set")
 ```
 
+There is a positive linear relationship among the actual and fitted values for the PLS model. This suggests a linear model like PLS is appropriate for this data set.
+
+## Examine residuals
+
 ```{r}
 #Residuals
 
@@ -218,9 +225,40 @@ plot(x = train.pls_predicted, y = train_resp.df - train.pls_predicted,
 
 The residuals appears to be randomly distributed with roughly constant variability about a mean of zero.
 
-## Model: Elastic Net
+## Compute model metrics
+
+What is the optimal number of components for the PLS model?
+
+```{r}
+summary(train.pls)
+plot(x = train.pls$results$ncomp, y = train.pls$results$RMSE,
+     xlab = "Number of components in PLS model",
+     ylab = "RMSE",
+     main = "RMSE declines then stabilizes with increase in PLS components")
+```
+
+The optimal number of components for the PLS model is 13. 
+
+```{r}
+print("RMSE:")
+print(train.pls$results$RMSE[13])
+print("R^2:")
+print(train.pls$results$Rsquared[13])
+
+PLS_resid <- train.pls$finalModel$residuals[, 1, 13]
+train_PLS_MAPE <- (100 / length(train_resp.df)) * sum(abs(PLS_resid /train_resp.df))
+
+print("MAPE:")
+print(train_PLS_MAPE)
+```
+
+MAPE for the PLS model is 1.19, and RMSE = 0.134.  
+
+# Elastic Net
 
 An elastic net model is another linear modeling method that performs feature selection and is robust to multicollinearity. The elastic net model combines a ridge penalty with a lasso penalty on model coefficients to improve the overall stability of the model. Elastic net models tolerate some increase in coefficient bias in order to reduce variance. Here, we search a range of lasso and ridge parameters to determine an optimal model. 
+
+## Fit model
 
 ```{r}
 enetGrid <- expand.grid(.lambda = c(0, 0.01, 0.1), .fraction = seq(0.05, 1, length = 20))
@@ -233,6 +271,29 @@ enetTune <- train(train_preds.df[,-31], train_resp.df,
 The optimal model occurs with $\lambda = 0$ and fraction = 1. This is equivalent to a pure lasso model. Including a ridge penalty did not improve model performance.
 
 ## Visualize
+
+```{r}
+enet_predicted <- predict(enetTune, train_preds.df[,-31])
+plot(x = train_resp.df, y = enet_predicted,
+     xlab = "Actual pH values",
+     ylab = "Fitted pH values for Elastic Net model",
+     main = "Actual vs Fitted pH values for Elastic Net model")
+```
+
+The relationship between actual and fitted values is linear with positive slope. It demonstrates constant but large variability, consistent with a relatively low value of $R^2 = 0.365$.
+
+## Examine residuals
+
+```{r}
+plot(x = enet_predicted, y = train_resp.df - enet_predicted,
+     xlab = "Fitted pH Values for Elastic Net",
+     ylab = "Residuals from Elastic Net Model",
+     main = "Residuals vs Fitted pH Values for Elastic Net")
+```
+
+The residuals appear to be randomly distributed about a mean of zero. Variability appears to be largest near fitted values around 8.6.
+
+## Compute model metrics
 
 ```{r}
 ggplot(data = enetTune$results, aes(x = fraction, y = RMSE, color = lambda)) +
@@ -255,16 +316,6 @@ ggplot(data = enetTune$results, aes(x = fraction, y = Rsquared, color = lambda))
 For the optimal elastic net model, $R^2 = 0.365$.
 
 ```{r}
-enet_predicted <- predict(enetTune, train_preds.df[,-31])
-plot(x = train_resp.df, y = enet_predicted,
-     xlab = "Actual pH values",
-     ylab = "Fitted pH values for Elastic Net model",
-     main = "Actual vs Fitted pH values for Elastic Net model")
-```
-
-The relationship between actual and fitted values is linear with positive slope. It demonstrates constant but large variability, consistent with a relatively low value of $R^2 = 0.365$.
-
-```{r}
 #MAPE for Elastic Net:
 
 enet_MAPE <- (100 / length(train_resp.df)) * sum(abs((train_resp.df - enet_predicted) / train_resp.df))
@@ -273,17 +324,9 @@ print("MAPE for elastic net:")
 print(enet_MAPE)
 ```
 
+For the optimal elastic net model, MAPE = 1.236.
 
-```{r}
-plot(x = enet_predicted, y = train_resp.df - enet_predicted,
-     xlab = "Fitted pH Values for Elastic Net",
-     ylab = "Residuals from Elastic Net Model",
-     main = "Residuals vs Fitted pH Values for Elastic Net")
-```
-
-The residuals appear to be randomly distributed about a mean of zero. Variability appears to be largest near fitted values around 8.6.
-
-## Test best model, PLS
+## Test best linear model, PLS
 
 The model with the best performance among those examined here is PLS. Here we test the performance of the PLS model on the holdout data.
 
@@ -303,29 +346,3 @@ print(PLS_test_RMSE)
 ```
 
 The PLS model performs similarly on the holdout data as it did on the test set. This provides evidence that the model has not been over-fitted to the training data.
-
-## Predict
-
-Finally, we use the PLS model to predict pH values for new samples.
-
-```{r}
-final_preds.df <- to_predict.df[,-26]
-
-final_brand_code <- final_preds.df[,1]
-final_preds.df <- lapply(final_preds.df[,2:ncol(final_preds.df)], function(x) replace(x, is.na(x), median(x, na.rm = TRUE)))
-final_preds.df <- as.data.frame(final_preds.df)
-final_preds.df$`Brand.Code` <- final_brand_code
-
-#Impute missing Brand Code as "C"
-final_brand.code_na <- final_preds.df$Brand.Code == ""
-final_preds.df[final_brand.code_na,32] <- "C"
-
-#Drop low-variance variable
-final_preds.df <- final_preds.df[,-12]
-
-#Center / scale / Box-Cox
-final_trans <- preProcess(final_preds.df, method = c("center", "scale", "BoxCox"))
-final_preds.df <- predict(final_trans, final_preds.df)
-
-final_PH <- predict(train.pls, final_preds.df)
-```
