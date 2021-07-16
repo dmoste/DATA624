@@ -1,0 +1,813 @@
+---
+title: "Data624 HW2"
+author: "Samuel Kigamba, Lin Li, Patrick Maloney, Daniel Moscoe, David Moste"
+date: "7/16/2021"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# KJ 6.3 
+
+#### Question
+
+A chemical manufacturing process for a pharmaceutical product was discussed in Sect.1.4. In this problem, the objective is to understand the relationship between biological measurements of the raw materials (predictors), measurements of the manufacturing process (predictors), and the response of product yield. Biological predictors cannot be changed but can be used to assess the quality of the raw material before processing. On the other hand, manufacturing process predictors can be changed in the manufacturing process. Improving product yield by 1% will boost revenue by approximately one hundred thousand dollars per batch:
+
+(a) Start R and use these commands to load the data:
+
+#### Code
+
+```{r}
+library(AppliedPredictiveModeling)
+data(ChemicalManufacturingProcess)
+```
+
+#### Response
+
+The matrix processPredictors contains the 57 predictors (12 describing the input biological material and 45 describing the process predictors) for the 176 manufacturing runs. yield contains the percent yield for each run.
+
+#### Question
+
+(b) A small percentage of cells in the predictor set contain missing values. Use an imputation function to fill in these missing values (e.g., see Sect. 3.8).
+
+#### Code
+
+```{r}
+# Get total number of missing values
+sum(is.na(ChemicalManufacturingProcess))
+```
+
+```{r}
+# Impute data with "knnImpute" method
+library(caret)
+library(RANN)
+
+Chem_impute <- preProcess(ChemicalManufacturingProcess, method = "knnImpute")
+impute_Result <- predict(Chem_impute, ChemicalManufacturingProcess)
+sum(is.na(impute_Result))
+```
+
+
+#### Question
+
+(c) Split the data into a training and a test set, pre-process the data, and tune a model of your choice from this chapter. What is the optimal value of the performance metric?
+
+#### Code
+
+```{r}
+library(caret)
+
+# Box–Cox transform and scale 
+trans <- preProcess(impute_Result, method = c("BoxCox", "scale"))
+```
+
+```{r}
+library(caret)
+
+transformed <- predict(trans, impute_Result)
+```
+
+```{r}
+library(caret)
+
+# Split data into 75 % training and 25 % testing sets
+set.seed(1)
+n <- nrow(transformed)
+trainIndex <- sample(1:n, size = round(0.75*n), replace=FALSE)
+train <- transformed[trainIndex ,]
+test <- transformed[-trainIndex ,]
+x <- train[, -1]
+y <- train[, 1]
+set.seed(100)
+plsTune <- train(x, y, 
+                 method = "pls",
+                 tuneLength = 20,
+                 trControl = trainControl(method = "cv", number = 10))
+plsTune
+```
+
+```{r}
+library(caret)
+
+plsTunePred <- predict(plsTune, test)
+```
+
+#### Question
+
+(d) Predict the response for the test set. What is the value of the performance metric and how does this compare with the resampled performance metricon the training set?
+
+#### Code
+
+```{r}
+library(pls)
+
+plsFit <- plsr(Yield ~., data = train)
+plsPred <- predict(plsFit, test)
+```
+
+#### Question
+
+(e) Which predictors are most important in the model you have trained? Do either the biological or process predictors dominate the list?
+
+#### Code
+
+```{r}
+library(mlbench)
+
+# Rank variables by importance
+importance <- varImp(plsTune, scale = FALSE)
+print(importance)
+```
+
+#### Response
+
+The first six most important predictors are dominated by manufacturing processes. The number of biological and process predictors are similar for the top 20 most important predictors. 
+
+#### Question
+
+(f) Explore the relationships between each of the top predictors and the response. How could this information be helpful in improving yield in future runs of the manufacturing process?
+
+#### Code
+
+```{r}
+par(mfrow=c(2,3))
+plot(ChemicalManufacturingProcess$ManufacturingProcess32, ChemicalManufacturingProcess$Yield, xlab = "Process32", ylab = "Yield")
+plot(ChemicalManufacturingProcess$ManufacturingProcess13, ChemicalManufacturingProcess$Yield, xlab = "Process13", ylab = "Yield")
+plot(ChemicalManufacturingProcess$ManufacturingProcess09, ChemicalManufacturingProcess$Yield, xlab = "Process09", ylab = "Yield")
+plot(ChemicalManufacturingProcess$ManufacturingProcess17, ChemicalManufacturingProcess$Yield, xlab = "Process17", ylab = "Yield")
+plot(ChemicalManufacturingProcess$ManufacturingProcess06, ChemicalManufacturingProcess$Yield,xlab = "Process06", ylab = "Yield")
+plot(ChemicalManufacturingProcess$BiologicalMaterial03, ChemicalManufacturingProcess$Yield,xlab = "Biological03", ylab = "Yield")
+```
+
+#### Response
+
+The plots suggest that the most important variables are either positively or negatively correlated to Yield. Since the manufacturing predictors are the most important, removing/modifying the ones that have negative correlations with Yield can improve the yield production.
+
+# KJ 7.2
+
+#### Question
+
+7.2. Friedman (1991) introduced several benchmark data sets create by simulation. One of these simulations used the following nonlinear equation to create data:
+y = 10 sin(πx1x2) + 20(x3 − 0.5)2 + 10x4 + 5x5 + N(0, σ2)
+where the x values are random variables uniformly distributed between [0, 1] (there are also 5 other non-informative variables also created in the simulation). 
+
+Which models appear to give the best performance? Does MARS select the informative predictors (those named X1–X5)?
+
+#### Code
+
+```{r}
+library(caret)
+library(dplyr)
+library(tidyr)
+library(corrplot)
+library(AppliedPredictiveModeling)
+library(e1071)
+library(kernlab)
+library(earth)
+library(dplyr)
+library(mlbench)
+library(RANN)
+
+set.seed(200)
+trainingData <- mlbench.friedman1(200, sd = 1)   ##We convert the 'x' data from a matrix to a data frame  > ##One reason is that this will give the columns names.  
+trainingData$x <- data.frame(trainingData$x)  ##Look at the data using  > featurePlot(trainingData$x, trainingData$y)  > ##or other methods.  >  > ##This creates a list with a vector 'y' and a matrix  > ##of predictors 'x'. Also simulate a large test set to  > ##estimate the true error rate with good precision:  > 
+testData <- mlbench.friedman1(5000, sd = 1)  
+testData$x <- data.frame(testData$x)
+
+# KNN
+knnModel <- train(x = trainingData$x,  y = trainingData$y, method = "knn", preProc = c("center", "scale"),  tuneLength = 10)    
+knnModel
+knnPred <- predict(knnModel, newdata = testData$x)   ##The function 'postResample' can be used to get the test set  
+##perforamnce values  
+postResample(pred = knnPred, obs = testData$y) 
+
+# MARS
+marsFit <- earth(trainingData$x, trainingData$y)
+marsFit
+summary(marsFit)
+marsGrid <- expand.grid(.degree = 1:2, .nprune = 2:38) 
+marsFittune <- train(trainingData$x, trainingData$y, method = "earth", tuneGrid = marsGrid,  trControl = trainControl(method = "cv")) 
+summary(marsFittune)
+head(predict(marsFittune, testData$x))
+varImp(marsFittune) 
+```
+
+#### Response
+
+The optimal MARS model minimized the RMSE when the nprune = 13 and the degree = 2. MARS selected x1 as the most important predictor and x4 as second. The model used 152 training set data points as support vectors. The MARS Model fit best with a high R2 of ~.95
+
+# KJ 7.5
+
+#### Question
+
+7.5. Exercise 6.3 describes data for a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several nonlinear regression models.
+
+(a) Which nonlinear regression model gives the optimal resampling and test set performance?
+
+#### Code
+
+```{r}
+library(AppliedPredictiveModeling)
+library(caret)
+
+data(ChemicalManufacturingProcess)
+set.seed(56)
+knnmodel2 <- preProcess(ChemicalManufacturingProcess, "knnImpute")
+df <- predict(knnmodel2, ChemicalManufacturingProcess)
+df <- df %>%
+  select_at(vars(-one_of(nearZeroVar(., names = TRUE))))
+in_train <- createDataPartition(df$Yield, times = 1, p = 0.8, list = FALSE)
+train_df <- df[in_train, ]
+test_df <- df[-in_train, ]
+
+# KNN
+knn_model <- train(
+  Yield ~ ., data = train_df, method = "knn",
+  center = TRUE,
+  scale = TRUE,
+  trControl = trainControl("cv", number = 10),
+  tuneLength = 25
+)
+knn_model
+
+knn_predictions <- predict(knn_model, test_df)
+results <- data.frame(t(postResample(pred = knn_predictions, obs = test_df$Yield))) %>%
+  mutate("Model"= "KNN") 
+results
+
+# MARS
+MARS_grid <- expand.grid(.degree = 1:2, .nprune = 2:38)
+MARS_model <- train(
+  Yield ~ ., data = train_df, method = "earth",
+  tuneGrid = MARS_grid,
+  # If the following lines are uncommented, it throws an error
+  #center = TRUE,
+  #scale = TRUE,
+  trControl = trainControl("cv", number = 10),
+  tuneLength = 25
+)
+MARS_model
+head(predict(MARS_model, test_df))
+
+# SVM
+SVM_model <- train(
+  Yield ~ ., data = train_df, method = "svmRadial",
+  center = TRUE,
+  scale = TRUE,
+  trControl = trainControl(method = "cv"),
+  tuneLength = 25
+)
+SVM_model
+
+SVM_predictions <- predict(SVM_model, test_df)
+results <- data.frame(t(postResample(pred = SVM_predictions, obs = test_df$Yield))) %>%
+  mutate("Model"= "SVM")
+```
+
+#### Response
+
+The SVM model was the best model according to the $R^2$
+
+#### Question
+
+(b) Which predictors are most important in the optimal nonlinear regression model? Do either the biological or process variables dominate the list? How do the top ten important predictors compare to the top ten predictors from the optimal linear model?
+
+#### Code
+
+```{r}
+library(caret)
+
+varImp(SVM_model, 10)
+```
+
+#### Response
+
+The processing (manufacturing) variables are most important with mfgprocess13 as most important.
+
+#### Question
+
+(c) Explore the relationships between the top predictors and the response for the predictors that are unique to the optimal nonlinear regression model. Do these plots reveal intuition about the biological or process predictors and their relationship with yield?
+
+#### Code
+
+```{r}
+library(tidyverse)
+
+df %>% select(c('ManufacturingProcess32','ManufacturingProcess13','BiologicalMaterial06','ManufacturingProcess17','BiologicalMaterial03','Yield')) %>% cor() %>% corrplot(method = 'circle')
+```
+
+#### Response
+
+Mfgprocess32 shows to have a high positive correlation, while Mfg Process 13 has a strong negative correlation. Biological Material 03 and 06 have positive correlations.
+
+# KJ 8.1
+
+#### Question
+
+Recreate the simulated data from Exercise 7.2:
+
+```{r}
+library(mlbench)
+library(tidyverse)
+
+set.seed(200)
+simulated <- mlbench.friedman1(200, sd = 1)
+simulated <- cbind(simulated$x, simulated$y)
+simulated <- as.data.frame(simulated)
+colnames(simulated)[ncol(simulated)] <- "y"
+```
+
+(a) Fit a random forest model to all of the predictors, then estimate the variable importance scores:
+
+```{r}
+library(randomForest)
+library(caret)
+
+model1 <- randomForest(y ~ ., data = simulated,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp1 <- varImp(model1, scale = FALSE)
+```
+
+Did the random forest model significantly use the uninformative predictors (V6-V10)?
+
+#### Code
+
+```{r}
+rfImp1
+```
+
+#### Response
+
+The code above shows the overall variable importance scores for the model. Variables V6-V10 have very low scores relative to the informative variables, V1-V5. The random forest model did not significantly use the uninformative predictors.
+
+#### Question
+
+(b) Now add an additional predictor that is highly correlated with one of the informative predictors.... Fit another random forest model to these data. Did the importance score for V1 change?
+
+#### Code
+
+```{r}
+library(randomForest)
+
+simulated2 <- mutate(simulated, "duplicate1" = simulated$V1 + rnorm(200) * 0.1)
+model2 <- randomForest(y ~ ., data = simulated2,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp2 <- varImp(model2, scale = FALSE)
+rfImp2
+```
+
+#### Response
+
+The importance score for V1 is reduced when another highly correlated predictor variable is added to the model. This example serves as a warning about interpreting results of random forests that contain correlated variables. When several variables are highly correlated, it's sometimes more informative to measure their importance together as a group. Or, a measure of variable importance such as Strobl et al.'s could be used instead.
+
+#### Question
+
+What happens when you add another predictor that is also highly correlated with V1?
+
+#### Code
+
+```{r}
+library(randomForest)
+
+simulated3 <- mutate(simulated2, "duplicate2" = simulated$V1 + rnorm(200) * 0.1)
+model3 <- randomForest(y ~ ., data = simulated3,
+                       importance = TRUE,
+                       ntree = 1000)
+rfImp3 <- varImp(model3, scale = FALSE)
+rfImp3
+```
+
+#### Response
+
+Because duplicate2 is highly correlated with both V1 and duplicate1, adding the second duplicate predictor reduces the variable importance scores of both V1 and the first duplicate, duplicate1. 
+
+#### Question
+
+(c) Use the `cforest` function in the `party` package to fit a random forest model using conditional inference trees. The `party` package function `varimp` can calculate predictor importance. The `conditional` argument of that function toggles between the traditional importance measure and the modified version described in Strobl et al. (2007). Do these importances show the same pattern as the traditional random forest model?
+
+#### Code
+
+```{r}
+library(partykit)
+
+#CI tree model for original data
+model4 <- cforest(y ~ ., data = simulated, ntree = 1000)
+#CI tree model with 1 additional uninformative variable
+model5 <- cforest(y ~ ., data = simulated2, ntree = 1000)
+#CI tree model with 2 additional uninformative variables
+model6 <- cforest(y ~ ., data = simulated3, ntree = 1000)
+#Variable importance scores with conditional = TRUE
+cfImp4.con <- varimp(model4, conditional = TRUE)
+cfImp5.con <- varimp(model5, conditional = TRUE)
+cfImp6.con <- varimp(model6, conditional = TRUE)
+#Variable importance scores with conditional = FALSE
+cfImp4.unc <- varimp(model4, conditional = FALSE)
+cfImp5.unc <- varimp(model5, conditional = FALSE)
+cfImp6.unc <- varimp(model6, conditional = FALSE)
+```
+
+```{r, echo = FALSE}
+print("No add'l var's, conditional = TRUE")
+print(cfImp4.con)
+```
+
+```{r, echo = FALSE}
+print("1 add'l var's, conditional = TRUE")
+print(cfImp5.con)
+```
+
+```{r, echo = FALSE}
+print("2 add'l var's, conditional = TRUE")
+print(cfImp6.con)
+```
+
+```{r, echo = FALSE}
+print("No add'l var's, conditional = FALSE")
+print(cfImp4.unc)
+```
+
+```{r, echo = FALSE}
+print("1 add'l var's, conditional = FALSE")
+print(cfImp5.unc)
+```
+
+```{r, echo = FALSE}
+print("2 add'l var's, conditional = FALSE")
+print(cfImp6.unc)
+```
+
+#### Response
+
+As additional variables highly correlated to V1 were added to the model, the importance of V1 declined for both traditional and modified importance measures. For the traditional importance measure, the importance of V1 declined 51% and then 26% with one and two additional predictors, respectively. For the modified importance measure, the importance of V1 declined less: 27% with one additional variable, and an additional 8% when a second highly correlated variable was added to the model. Total decline in the importance of V1 under the traditional importance measure is 64%, and total decline in the importance of V1 under the modified importance measure is 33%. The modified importance measure mitigated the decline in variable importance associated with the addition of highly correlated predictors.
+
+#### Question
+
+(d) Repeat this process with different tree models, such as boosted trees and Cubist. Does the same pattern occur?
+
+#### Code
+
+```{r, fig.show = 'hide'}
+#Boosted tree model for original data
+library(gbm)
+
+model7 <- gbm(y ~ ., data = simulated, distribution = "gaussian")
+#Boosted tree model with 1 additional uninformative variable
+model8 <- gbm(y ~ ., data = simulated2, distribution = "gaussian")
+#Boosted tree model with 2 additional uninformative variables
+model9 <- gbm(y ~ ., data = simulated3, distribution = "gaussian")
+#Variable importance scores with method = relative.influence
+btImp7.ri <- summary.gbm(object = model7, method = relative.influence)
+btImp8.ri <- summary.gbm(object = model8, method = relative.influence)
+btImp9.ri <- summary.gbm(object = model9, method = relative.influence)
+#Variable importance scores with method = permutation.test.gbm
+btImp7.pt <- summary.gbm(object = model7, method = permutation.test.gbm)
+btImp8.pt <- summary.gbm(object = model8, method = permutation.test.gbm)
+btImp9.pt <- summary.gbm(object = model9, method = permutation.test.gbm)
+```
+
+```{r, echo = FALSE}
+print("No add'l var's, method = relative.importance")
+print(btImp7.ri)
+```
+
+
+```{r, echo = FALSE}
+print("1 add'l var's, method = relative.importance")
+print(btImp8.ri)
+```
+
+```{r, echo = FALSE}
+print("2 add'l var's, method = relative.importance")
+print(btImp9.ri)
+```
+
+```{r, echo = FALSE}
+print("No add'l var's, method = relative.permutation.test.gbm")
+print(btImp7.pt)
+```
+
+```{r, echo = FALSE}
+print("1 add'l var's, method = relative.permutation.test.gbm")
+print(btImp8.pt)
+```
+
+```{r, echo = FALSE}
+print("2 add'l var's, method = relative.permutation.test.gbm")
+print(btImp9.pt)
+```
+
+#### Response
+
+For boosted trees, there are two methods for assessing variable importance: `relative.influence`, which is a traditional procedure, and an experimental procedure called `permutation.test.gbm`. As additional variables highly correlated with V1 are added to the model, the relative importance of V1 declines more steeply under the `permutation.test.gbm` method than under the `relative.influence` method. The importance of V1 declines a total of 51% under the relative importance measure when two additional variables are added. Under the permutation test, the total decline in importance for V1 is 60%.
+
+#### Code
+
+```{r}
+#Cubist Model
+library(Cubist)
+
+model10 <- cubist(x = simulated[-11], y = simulated$y, committees = 100)
+model11 <- cubist(x = simulated2[-11], y = simulated2$y, committees = 100)
+model12 <- cubist(x = simulated3[-11], y = simulated3$y, committees = 100)
+```
+
+```{r}
+#Note: output is truncated to emphasize measures of variable importance.
+summary(model10)
+summary(model11)
+summary(model12)
+```
+
+#### Response
+
+While "There is no established technique for measuring predictor importance for Cubist models" (KJ 212), we can observe the frequency with which a variable appeared in a rule criterion ("conds"). This gives some indication of the importance of a variable during the Cubist modeling process.  
+
+In the first model, which does not include additional variables correlated with `V1`, `V1` appeared in rule criteria 47% of the time. As `duplicate1` and then `duplicate2` were added to the model, `V1` appeared in rule criteria 38% and 43% of the time, respectively. This indicates some decline in variable importance for `V1` as highly correlated variables are added to the model. In terms of its appearance in final models, `V1` underwent a more significant decline: from 96% with no correlated duplicate variables, to 67%, and then to 58%.
+
+# KJ 8.2
+
+#### Question
+
+Use a simulation to show tree bias with different granularities.
+
+#### Code
+
+```{r}
+#Create dataframe with some informative (x11, x12, x13) and some uninformative (x14, x15, x16) predictors.
+y <- rnorm(1000, 0, 1)
+x11 <- y + rnorm(1000, 1, 0.5)
+x12 <- y / 3 * rnorm(1000, 0, 0.5)
+x13 <- (y + rnorm(1000, 0, 0.5)) ^ (1/3) 
+x14 <- rnorm(1000, 0, 1)
+x15 <- runif(1000, 4, 6)
+x16 <- rexp(1000, 0.5)
+df_1 <- data.frame(x11 = x11, x12 = x12, x13 = x13, x14 = x14, x15 = x15, x16 = x16, y = y)
+#Generate cutpoints for decreasing granularity of uninformative predictors (50, 20, and 10 distinct values).
+x14_50 <- seq(from = min(df_1$x14), to = max(df_1$x14), length.out = 50)
+x14_20 <- seq(from = min(df_1$x14), to = max(df_1$x14), length.out = 20)
+x14_10 <- seq(from = min(df_1$x14), to = max(df_1$x14), length.out = 10)
+x15_50 <- seq(from = min(df_1$x15), to = max(df_1$x15), length.out = 50)
+x15_20 <- seq(from = min(df_1$x15), to = max(df_1$x15), length.out = 20)
+x15_10 <- seq(from = min(df_1$x15), to = max(df_1$x15), length.out = 10)
+x16_50 <- seq(from = min(df_1$x16), to = max(df_1$x16), length.out = 50)
+x16_20 <- seq(from = min(df_1$x16), to = max(df_1$x16), length.out = 20)
+x16_10 <- seq(from = min(df_1$x16), to = max(df_1$x16), length.out = 10)
+#Create low-granularity variables
+x24 <- as.numeric(as.vector(cut(df_1$x14, breaks = 50, labels = x14_50)))
+x34 <- as.numeric(as.vector(cut(df_1$x14, breaks = 20, labels = x14_20)))
+x44 <- as.numeric(as.vector(cut(df_1$x14, breaks = 10, labels = x14_10)))
+x25 <- as.numeric(as.vector(cut(df_1$x15, breaks = 50, labels = x15_50)))
+x35 <- as.numeric(as.vector(cut(df_1$x15, breaks = 20, labels = x15_20)))
+x45 <- as.numeric(as.vector(cut(df_1$x15, breaks = 10, labels = x15_10)))
+x26 <- as.numeric(as.vector(cut(df_1$x16, breaks = 50, labels = x16_50)))
+x36 <- as.numeric(as.vector(cut(df_1$x16, breaks = 20, labels = x16_20)))
+x46 <- as.numeric(as.vector(cut(df_1$x16, breaks = 10, labels = x16_10)))
+#Construct reduced granularity dataframes
+df_2 <- data.frame(x11 = x11, x12 = x12, x13 = x13, x24 = x24, x25 = x25, x26 = x26, y = y)
+df_3 <- data.frame(x11 = x11, x12 = x12, x13 = x13, x34 = x34, x35 = x35, x36 = x36, y = y)
+df_4 <- data.frame(x11 = x11, x12 = x12, x13 = x13, x44 = x44, x45 = x45, x46 = x46, y = y)
+#Construct models
+library(rpart)
+
+df_1.mod <- rpart(y ~ ., data = df_1)
+df_2.mod <- rpart(y ~ ., data = df_2)
+df_3.mod <- rpart(y ~ ., data = df_3)
+df_4.mod <- rpart(y ~ ., data = df_4)
+```
+
+```{r, echo = FALSE}
+print("Variable importance with high granularity uninformative vars")
+print(varImp(df_1.mod))
+```
+
+```{r, echo = FALSE}
+print("Variable importance with uninformative vars (50 distinct vals)")
+varImp(df_2.mod)
+```
+
+```{r, echo = FALSE}
+print("Variable importance with uninformative vars (20 distinct vals)")
+varImp(df_3.mod)
+```
+
+```{r, echo = FALSE}
+print("Variable importance with uninformative vars (10 distinct vals")
+varImp(df_4.mod)
+```
+
+#### Response
+
+Tree bias due to granularity occurs when a variable's importance in a tree model is inflated not due to its strong relationship to the response, but merely because of the large number of distinct values that variable takes on. Variables that take on large numbers of distinct values are said to be granular. To demonstrate tree bias due to granularity, we examined a single dataset comprised of some informative and some uninformative variables. By binning the uninformative variables (first to 50 distinct values, then 20, then 10) we were able to reduce their granularity. If bias due to granularity exists in the original high-granularity data, then the variable importance of the uninformative variables should decrease as they are binned to fewer and fewer distinct values.
+
+The plots below show the relationship between X14, an uninformative variable, and the response variable, as the granularity of x14 is decreased.
+
+```{r}
+plot(df_1$x14, df_1$y, xlab = "x14, high granularity", ylab = "y", main = "x14 vs. response (high gran)")
+plot(df_2$x24, df_2$y, xlab = "x14, 50 distinct vals", ylab = "y", main = "x14 vs. response (50 distinct vals)")
+plot(df_3$x34, df_3$y, xlab = "x14, 20 distinct vals", ylab = "y", main = "x14 vs. response (20 distinct vals)")
+plot(df_4$x44, df_4$y, xlab = "x14, 10 distinct vals", ylab = "y", main = "x14 vs. response (10 distinct vals)")
+```
+
+The code in the **Code** section above shows the construction of the original dataset, along with the process for reducing the granularity of each uninformative variable through binning. This code is followed by variable importance tables for each model as granularity is varied.
+
+As the granularity of the non-explanatory variables decreased, the overall importance of those variables decreased as well. This confirms that increased granularity can bias a tree model toward predictors with greater granularity, even when those predictors contain no information about the response variable.
+
+# KJ 8.3
+
+#### Question
+
+In stochastic gradient boosting the bagging fraction and learning rate will govern the construction of the trees as they are guided by the gradi- ent. Although the optimal values of these parameters should be obtained through the tuning process, it is helpful to understand how the magnitudes of these parameters affect magnitudes of variable importance. Figure 8.24 provides the variable importance plots for boosting using two extreme values for the bagging fraction (0.1 and 0.9) and the learning rate (0.1 and 0.9) for the solubility data. The left-hand plot has both parameters set to 0.1, and the right-hand plot has both set to 0.9:
+
+(a) Why does the model on the right focus its importance on just the first few of predictors, whereas the model on the left spreads importance across more predictors?
+
+#### Response
+
+Bagging, short for bootstrap aggregation, is an ensemble technique that combines the predictions from multiple algorithms to make more accurate predictions than any individual model. Bagging is used to reduce variance of a decision tree. 
+
+Model on the right has both the bagging fraction and learning rate set at a higher value (0.9) compared to the model on the left (0.1). High learning rate typically results in overfit models and poor performance. High bagging fraction means a larger subset of the predictor variables are selected and the few very important predictors will stand out.
+
+#### Question
+
+(b) Which model do you think would be more predictive of other samples?
+
+#### Response
+
+The left model with slow learning rate should be able to better predict the new data. The model with high learning rate can cause the model to converge to a suboptimal solution too quickly and result in overfitting.  
+
+#### Question
+
+(c) How would increasing interaction depth affect the slope of predictor importance for either model in Fig. 8.24?
+
+#### Response
+
+Interaction depth controls the number of splits and the number of terminal nodes. In maximum depth, each tree contributes equally to the final model with the highest level of variable interactions. Increasing the depth will increase the spread of important variables, thus decreasing the slope.
+
+# KJ 8.7
+
+#### Question
+
+8.7. Refer to Exercises 6.3 and 7.5 which describe a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several tree-based models:
+
+(a) Which tree-based regression model gives the optimal resampling and test set performance?
+
+#### Code
+
+First, I need to bring in the data. I renamed it cmp so I didn't have to continuously write ChemicalManufacturingProcess.
+
+```{r}
+library(AppliedPredictiveModeling)
+
+data(ChemicalManufacturingProcess)
+
+cmp <- ChemicalManufacturingProcess
+```
+
+Next, I split the target variable off from the features and checked for missing values.
+
+```{r}
+target <- cmp[,1]
+features <- cmp[,-1]
+
+summary(target)
+
+cc <- complete.cases(features)
+(length(cc[cc == TRUE])/length(cc))*100
+
+missing_data <- sapply(features, function(x) sum(is.na(x)))
+missing_data <- data.frame(missing_data)
+(sum(missing_data)/(176*58))*100
+```
+
+There were no missing values in the target (thankfully), but about 1% of the data was missing from the features. I decided to simply fill in those missing values with the mean of each feature since over 85% of the data was complete.
+
+```{r}
+na_to_mean <- function(x) replace(x, is.na(x), mean(x, na.rm = TRUE))
+features[] <- lapply(features, na_to_mean)
+```
+
+The next step is to split the data in train and test sets.
+
+```{r}
+set.seed(12345)
+train_ind <- sample(seq_len(nrow(features)),
+                    size = floor(0.75*nrow(features)))
+
+train_x <- features[train_ind,]
+test_x <- features[-train_ind,]
+
+train_y <- target[train_ind]
+test_y <- target[-train_ind]
+```
+
+Next, I need to build a couple tree-based models! I'm going to do single trees, random forest, and boosted!
+
+```{r}
+# Single Tree
+library(rpart)
+
+rpartTree <- rpart(train_y ~ .,
+                   data = train_x,
+                   method = "anova")
+
+rpartPredict <- predict(rpartTree, test_x)
+rmse <- sqrt(mean((test_y - rpartPredict)^2))
+rmse
+
+# Random Forest
+library(randomForest)
+
+rfModel <- randomForest(train_x,
+                        train_y,
+                        importance = TRUE,
+                        ntress = 1000)
+
+rfPredict <- predict(rfModel, test_x)
+rmse <- sqrt(mean((test_y - rfPredict)^2))
+rmse
+
+# Boosted
+library(gbm)
+
+gbmModel <- gbm.fit(train_x,
+                    train_y,
+                    distribution = "gaussian")
+
+gbmPredict <- predict(gbmModel, test_x)
+rmse <- sqrt(mean((test_y - gbmPredict)^2))
+rmse
+```
+
+#### Response
+
+I created three different tree-based models: single tree, random forest, and boosted trees. Based on RMSE, the random forest model was the best one (lowestd RMSE).
+
+#### Question
+
+(b) Which predictors are most important in the optimal tree-based regression model? Do either the biological or process variables dominate the list? How do the top 10 important predictors compare to the top 10 predictors from the optimal linear and nonlinear models?
+
+#### Code
+
+```{r}
+library(randomForest)
+
+# Look at best model
+varImpPlot(rfModel)
+top_predictors <- sort(rfModel$importance, decreasing = TRUE)[1:10]
+```
+
+#### Response
+
+The most important predictors in this optimal model are MP32, MP13, BM06, and BM12. The top of the list seems to be pretty split between biological and process variables. Even if you look further down on the list, it stays pretty split the entire way down. This is similar to what was found by our other models in previous problems.
+
+# Recommender System Problem
+
+#### Question
+
+Imagine 10000 receipts sitting on your table. Each receipt represents a transaction with items that were purchased. The receipt is a representation of stuff that went into a customer’s basket – and therefore ‘Market Basket Analysis’.
+
+That is exactly what the Groceries Data Set contains: a collection of receipts with each line representing 1 receipt and the items purchased. Each line is called a transaction and each column in a row represents an item.
+
+Here is the dataset = GroceryDataSet.csv  (comma separated file)
+
+You assignment is to use R to mine the data for association rules.  You should report support, confidence and lift and your top 10 rules by lift.
+
+#### Code
+
+```{r}
+library(arules)
+library(dplyr)
+```
+
+```{r}
+grocery <- read.transactions('https://raw.githubusercontent.com/dmoste/DATA624/main/HW2/GroceryDataSet.csv')
+summary(grocery)
+```
+
+```{r}
+itemFrequencyPlot(grocery, topN = 20)
+```
+
+```{r}
+crossTable(grocery, measure = "support", sort = TRUE)[1:5, 1:5]
+  
+```
+```{r}
+rules <- apriori(grocery, control = list(verbose = FALSE),
+                 parameter = list(support = 0.001, confidence = 0.25,
+                                  minlen = 2))
+top_lift <- sort(rules, by = "lift", decreasing = TRUE)[1:10]
+inspect(top_lift)
+top_support <- sort(rules, by = "support", decreasing = TRUE)[1:10]
+#inspect(top_support)
+```
+
+#### Response
+
+According to the algorithm, the top ten rules by lift are listed above. The top two rules involve people buying products from the bakery also buying life items. People also tend to buy fruits and vegetables together.
+
