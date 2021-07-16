@@ -84,7 +84,7 @@ The distance formula is the way in which the distance between two observations i
 
 #### Weighting (also known as kernel)
 
-This describes, quite literally, how much weight is given to each observation. A common technique is to give more weight to observations that are closer to the point in question. Like distance, there are many different options/formulas to use to determine weight. These include rectangular, triangular, buweight, triweight, and many many more.
+This describes, quite literally, how much weight is given to each observation. A common technique is to give more weight to observations that are closer to the point in question. Like distance, there are many different options/formulas to use to determine weight. These include rectangular, triangular, biweight, triweight, and many many more.
 
 #### Model 1
 
