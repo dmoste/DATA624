@@ -1,0 +1,51 @@
+---
+title: "HW2 Recommender System"
+author: "Patrick Maloney"
+date: "7/13/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Recommender System Problem
+
+Imagine 10000 receipts sitting on your table. Each receipt represents a transaction with items that were purchased. The receipt is a representation of stuff that went into a customer’s basket – and therefore ‘Market Basket Analysis’.
+
+That is exactly what the Groceries Data Set contains: a collection of receipts with each line representing 1 receipt and the items purchased. Each line is called a transaction and each column in a row represents an item.
+
+Here is the dataset = GroceryDataSet.csv  (comma separated file)
+
+You assignment is to use R to mine the data for association rules.  You should report support, confidence and lift and your top 10 rules by lift.
+
+```{r}
+library(arules)
+library(dplyr)
+```
+
+```{r}
+grocery <- read.transactions('https://raw.githubusercontent.com/dmoste/DATA624/main/HW2/GroceryDataSet.csv')
+
+summary(grocery)
+
+```
+
+```{r}
+itemFrequencyPlot(grocery, topN = 20)
+```
+
+```{r}
+crossTable(grocery, measure = "support", sort = TRUE)[1:5, 1:5]
+  
+```
+```{r}
+rules <- apriori(grocery, control = list(verbose = FALSE),
+                 parameter = list(support = 0.001, confidence = 0.25,
+                                  minlen = 2))
+top_lift <- sort(rules, by = "lift", decreasing = TRUE)[1:10]
+inspect(top_lift)
+
+top_support <- sort(rules, by = "support", decreasing = TRUE)[1:10]
+#inspect(top_support)
+```
+According to the algorithm, the top ten rules by lift are listed above. The top two rules involve people buying products from the bakery also buying life items. People also tend to buy fruits and vegetables together.
